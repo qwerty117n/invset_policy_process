@@ -46,9 +46,9 @@ MONTHLY_CONTRIBUTION = 69396  # 円(東京都・標準報酬月額379,213円×18
 # ---- モンテカルロ試行回数 ------------------------------------------
 N_SIMULATIONS = 10000
 
-# ---- 診断用:月次で動いていることを可視化するため、先頭N本のパスの
-#      資産別構成比の推移を記録する数(0にすると記録しない) ----------
-TRACK_SAMPLE_PATHS = 3
+# ---- (現在は未使用:診断用グラフ・サンプルパスの月次収益率グラフを削除した
+#      ため、track_paths関連の記録は不要。0のままでOK) --------------------
+TRACK_SAMPLE_PATHS = 0
 
 # ---- 積立額の影響を除いた「運用のみ」の累積収益率を、全試行分重ねて
 #      描画するために、全パスの月次収益率を記録するかどうか ----------
@@ -340,14 +340,14 @@ def main():
         "final_value": final_values,
         "rebalance_count": rebalance_count,
     })
-    summary_df.to_csv("/mnt/user-data/outputs/simulation_results_raw.csv", index=False)
+    # summary_df.to_csv("/mnt/user-data/outputs/simulation_results_raw.csv", index=False)
 
     stats_df = pd.DataFrame({
         "指標": ["積立元本", "平均値"] + [f"{p}パーセンタイル" for p in percentiles] + ["元本割れ確率(%)", "平均リバランス回数"],
         "値": [principal, final_values.mean()] + [stats[p] for p in percentiles]
               + [(final_values < principal).mean() * 100, rebalance_count.mean()],
     })
-    stats_df.to_csv("/mnt/user-data/outputs/simulation_summary.csv", index=False, encoding="utf-8-sig")
+    # stats_df.to_csv("/mnt/user-data/outputs/simulation_summary.csv", index=False, encoding="utf-8-sig")
 
     # =================================================================
     # 5. グラフ作成
@@ -394,87 +394,11 @@ def main():
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda v, pos: f"{v:,.0f}"))
 
     plt.tight_layout()
-    plt.savefig("/mnt/user-data/outputs/simulation_chart.png", dpi=150)
-    print("\nグラフを simulation_chart.png に保存しました。")
-    print("詳細データを simulation_results_raw.csv / simulation_summary.csv に保存しました。")
+    # plt.savefig("/mnt/user-data/outputs/simulation_chart.png", dpi=150)
+    print("\nグラフ(資産評価額の推移・分布)を作成しました。")
 
     # =================================================================
-    # 6. 【診断用】月次で運用されていることの可視化
-    #    サンプルパスの株式合計比率(国内株式+外国株式)の月次推移を描画し、
-    #    許容幅(±9%)を超えた月にリバランスが起きていることを確認する。
-    # =================================================================
-    if weight_history is not None and TRACK_SAMPLE_PATHS > 0:
-        stock_idx = [2, 3]  # 国内株式・外国株式
-        target_stock = TARGET_WEIGHTS[stock_idx].sum()
-
-        fig2, ax = plt.subplots(figsize=(12, 5))
-        for i in range(TRACK_SAMPLE_PATHS):
-            stock_weight_path = weight_history[:, i, stock_idx].sum(axis=1) * 100
-            ax.plot(years_axis, stock_weight_path, lw=1.2, alpha=0.8,
-                     label=f"サンプルパス{i+1}")
-
-        ax.axhline(target_stock * 100, color="black", lw=1, ls="-", label="目標(50%)")
-        ax.axhline((target_stock + STOCK_TOLERANCE) * 100, color="red", lw=1, ls="--",
-                    label=f"許容上限(±{STOCK_TOLERANCE*100:.0f}%)")
-        ax.axhline((target_stock - STOCK_TOLERANCE) * 100, color="red", lw=1, ls="--")
-
-        ax.set_xlabel("年")
-        ax.set_ylabel("株式合計の構成比(%)")
-        ax.set_title(
-            "【診断】株式合計比率の月次推移(赤破線=許容幅→到達でリバランス実行)\n"
-            "折れ線がギザギザに毎月動いている点が「月次で運用している」ことの証拠"
-        )
-        ax.legend(loc="upper left", fontsize=8, ncol=2)
-        ax.grid(alpha=0.3)
-        plt.tight_layout()
-        plt.savefig("/mnt/user-data/outputs/diagnostic_monthly_check.png", dpi=150)
-        print("診断グラフを diagnostic_monthly_check.png に保存しました。")
-
-        # 何ヶ月おきにリバランスが起きているかの目安を出力
-        avg_months_between = N_MONTHS / max(rebalance_count.mean(), 1e-9)
-        print(f"\n【参考】平均リバランス間隔: 約{avg_months_between:.1f}ヶ月に1回")
-        print("(乖離許容幅が広め[±5〜9%]のため、月次運用でも頻度は低めになるのが正常です)")
-
-    # =================================================================
-    # 7. 【追加】ポートフォリオの収益率グラフ
-    #    (左)月次収益率(%)の推移  (右)月次収益率を複利で積み上げた
-    #    累積収益率指数(運用開始時点=100。積立元本の影響を除いた
-    #    「運用そのものの成果」を見るためのグラフ)
-    # =================================================================
-    if return_history is not None and TRACK_SAMPLE_PATHS > 0:
-        fig3, axes3 = plt.subplots(1, 2, figsize=(14, 5))
-
-        # --- (左) 月次収益率(%)の推移 ---
-        ax = axes3[0]
-        for i in range(TRACK_SAMPLE_PATHS):
-            ax.plot(years_axis, return_history[:, i] * 100, lw=0.9, alpha=0.8,
-                     label=f"サンプルパス{i+1}")
-        ax.axhline(0, color="black", lw=0.8)
-        ax.set_xlabel("年")
-        ax.set_ylabel("月次収益率(%)")
-        ax.set_title("ポートフォリオの月次収益率の推移")
-        ax.legend(loc="upper left", fontsize=8)
-        ax.grid(alpha=0.3)
-
-        # --- (右) 累積収益率指数(運用開始時点=100、複利。積立額の影響を除く) ---
-        ax = axes3[1]
-        monthly_ret_filled = np.nan_to_num(return_history, nan=0.0)  # 未定義月(初月)は0%として扱う
-        cum_index = 100.0 * np.cumprod(1.0 + monthly_ret_filled, axis=0)
-        for i in range(TRACK_SAMPLE_PATHS):
-            ax.plot(years_axis, cum_index[:, i], lw=1.3, label=f"サンプルパス{i+1}")
-        ax.axhline(100, color="gray", lw=1, ls="--", label="運用開始時点(=100)")
-        ax.set_xlabel("年")
-        ax.set_ylabel("累積収益率指数(開始時点=100)")
-        ax.set_title("ポートフォリオの累積収益率(複利・積立額の影響を除く)")
-        ax.legend(loc="upper left", fontsize=8)
-        ax.grid(alpha=0.3)
-
-        plt.tight_layout()
-        plt.savefig("/mnt/user-data/outputs/portfolio_return_chart.png", dpi=150)
-        print("収益率グラフを portfolio_return_chart.png に保存しました。")
-
-    # =================================================================
-    # 8. 【追加】全試行(N_SIMULATIONS回)のポートフォリオ・リターン分布
+    # 6. 【追加】全試行(N_SIMULATIONS回)のポートフォリオ・リターン分布
     #    毎月積立を考慮した年率換算のmoney-weighted return(IRR)を
     #    各パスについて計算し、その分布をヒストグラムで示す。
     # =================================================================
@@ -503,16 +427,16 @@ def main():
     ax.legend(fontsize=9)
     ax.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig("/mnt/user-data/outputs/return_distribution.png", dpi=150)
-    print("リターン分布図を return_distribution.png に保存しました。")
+    # plt.savefig("/mnt/user-data/outputs/return_distribution.png", dpi=150)
+    print("リターン分布図(年率リターン)を作成しました。")
 
     # リターン分布もCSVに保存
-    pd.DataFrame({"annualized_return_pct": annual_returns_pct}).to_csv(
-        "/mnt/user-data/outputs/return_distribution_raw.csv", index=False
-    )
+    # pd.DataFrame({"annualized_return_pct": annual_returns_pct}).to_csv(
+    #     "/mnt/user-data/outputs/return_distribution_raw.csv", index=False
+    # )
 
     # =================================================================
-    # 9. 【追加】積立額の影響を除いた累積収益率を、全試行分重ねて描画
+    # 7. 【追加】積立額の影響を除いた累積収益率を、全試行分重ねて描画
     #    (スパゲッティプロット)
     #    「毎月100円ずつ足すのではなく、最初の100を複利運用だけしたら
     #    どうなるか」を示す指数(運用開始時点=100)を、全N_SIMULATIONS本
@@ -556,8 +480,8 @@ def main():
         ax.grid(alpha=0.3)
 
         plt.tight_layout()
-        plt.savefig("/mnt/user-data/outputs/return_spaghetti_all_paths.png", dpi=150)
-        print("全試行重ね描きグラフを return_spaghetti_all_paths.png に保存しました。")
+        # plt.savefig("/mnt/user-data/outputs/return_spaghetti_all_paths.png", dpi=150)
+        print("全試行重ね描きグラフ(スパゲッティプロット)を作成しました。")
 
 
 if __name__ == "__main__":
